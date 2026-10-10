@@ -1,0 +1,24 @@
+# Actual environment variables and secrets
+.env
+.env.*
+!.env.example
+
+# Dependencies
+node_modules/
+
+# Database, user information and uploads
+data/
+uploads/
+*.sqlite
+*.sqlite-*
+*.db
+*.db-*
+
+# Logs and test output
+*.log
+coverage/
+
+# Archives and operating-system files
+*.zip
+.DS_Store
+Thumbs.db
