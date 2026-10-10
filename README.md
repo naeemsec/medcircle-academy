@@ -133,6 +133,7 @@ medcircle-academy/
     app.test.js      HTTP workflow and access-control tests
     views.test.js    Public/student/admin view-rendering checks
   server.js          Node server, SQLite schema and API
+  vercel.json
   package.json       Start, development and test commands
   .env.example       Optional configuration
   .gitignore         Excludes data and local secrets
