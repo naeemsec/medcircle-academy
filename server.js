@@ -4,9 +4,11 @@ import { randomBytes, randomUUID, scryptSync, timingSafeEqual, createHash } from
 import { mkdirSync, writeFileSync, existsSync, statSync, createReadStream } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { createReviews } from './reviews.js';
 
 const ROOT = path.dirname(fileURLToPath(import.meta.url));
-const DATA = path.resolve(process.env.DATA_DIR || path.join(ROOT, 'data'));
+// Vercel's project folder is read-only; /tmp is writable but NOT permanent (see README, 'Hosting').
+const DATA = path.resolve(process.env.DATA_DIR || (process.env.VERCEL ? '/tmp/cathlab-data' : path.join(ROOT, 'data')));
 const UPLOADS = path.join(DATA, 'uploads');
 mkdirSync(UPLOADS, { recursive: true });
 const db = new DatabaseSync(path.join(DATA, 'medcircle.sqlite'));
@@ -82,7 +84,7 @@ if (!db.prepare("SELECT id FROM users WHERE role='admin'").get()) {
   throw new Error('Set a unique ADMIN_PASSWORD of at least 10 characters for non-demo mode.');
  }
  db.prepare('INSERT INTO users VALUES(?,?,?,?,?,?,?)').run(
-  randomUUID(), 'Academy Admin', (process.env.ADMIN_EMAIL || 'admin@medcircle.dev').toLowerCase(),
+  randomUUID(), 'Academy Admin', (process.env.ADMIN_EMAIL || 'admin@cathlab.dev').toLowerCase(),
   passwordHash(password), 'admin', 'active', now()
  );
 }
@@ -123,6 +125,7 @@ const attempts=new Map();
 function limit(req){const key=req.socket.remoteAddress;const x=attempts.get(key)||{n:0,until:Date.now()+900000};if(Date.now()>x.until){x.n=0;x.until=Date.now()+900000;}x.n++;attempts.set(key,x);if(attempts.size>10000)attempts.delete(attempts.keys().next().value);if(x.n>40)fail(429,'Too many sign-in attempts. Try again in 15 minutes.');}
 const colors=['blue','purple','yellow','green','cyan','orange'];
 function media(v){v=clean(v,2000);if(!v)return '';if(/^\/uploads\/[a-f0-9-]+\.(mp4|webm|png|jpg|webp)$/.test(v))return v;try{const u=new URL(v);if(u.protocol==='https:')return u.href;}catch{}fail(400,'Use an HTTPS media URL or upload a file.');}
+const reviews=createReviews(db,{json,fail,payload,clean,requireUser,now,randomUUID});
 
 
 // Prices are stored as integer minor units (e.g. PKR 2,500 = 250000).
@@ -146,7 +149,7 @@ function courseView(c,user) {
  const order=user?db.prepare('SELECT id,status,amount,currency,admin_note,created FROM orders WHERE user_id=? AND course_id=?').get(user.id,c.id):null;
  return {...c,lectureCount:db.prepare('SELECT COUNT(*) n FROM lectures WHERE course_id=?').get(c.id).n,
   students:user?.role==='admin'?db.prepare("SELECT COUNT(*) n FROM orders WHERE course_id=? AND status='approved'").get(c.id).n:undefined,
-  access:hasAccess(user,c.id),order:order||null};
+  access:hasAccess(user,c.id),order:order||null,rating:reviews.ratingOf('course',c.id)};
 }
 function courseInput(b) {
  const title=clean(b.title),description=clean(b.description,5000);
@@ -205,10 +208,13 @@ function verifyProof(proof,user) {
 }
 
 async function api(req,res,url){const p=url.pathname,m=req.method,u=identity(req);
- if(p==='/api/me'&&m==='GET')return json(res,200,{user:userSafe(u),demo});
+ if(p==='/api/me'&&m==='GET')return json(res,200,{user:userSafe(u),demo,demoEmail:demo?db.prepare("SELECT email FROM users WHERE role='admin' ORDER BY created LIMIT 1").get()?.email:undefined});
  if(p==='/api/register'&&m==='POST'){limit(req);const b=await payload(req),name=clean(b.name,80),email=clean(b.email,254).toLowerCase(),password=b.password;if(!name||!/^\S+@\S+\.\S+$/.test(email)||typeof password!=='string'||password.length<10||password.length>128)fail(400,'Enter your name, a valid email, and a password of 10–128 characters.');if(db.prepare('SELECT id FROM users WHERE email=?').get(email))fail(409,'An account with this email already exists.');const id=randomUUID();db.prepare('INSERT INTO users VALUES(?,?,?,?,?,?,?)').run(id,name,email,passwordHash(password),'student','active',now());session(res,id);return json(res,201,{user:userSafe(db.prepare('SELECT * FROM users WHERE id=?').get(id))});}
  if(p==='/api/login'&&m==='POST'){limit(req);const b=await payload(req),found=db.prepare('SELECT * FROM users WHERE email=?').get(clean(b.email,254).toLowerCase());const pw=typeof b.password==='string'?b.password:'';if(pw.length>128||!found||!passwordOK(pw,found.password)||found.status!=='active')fail(401,'Incorrect email or password, or account suspended.');session(res,found.id);return json(res,200,{user:userSafe(found)});}
  if(p==='/api/logout'&&m==='POST'){const token=(req.headers.cookie||'').split(';').map(x=>x.trim()).find(x=>x.startsWith('session='))?.slice(8);if(token)db.prepare('DELETE FROM sessions WHERE token=?').run(hash(token));res.setHeader('Set-Cookie','session=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0');return json(res,200,{ok:true});}
+ if(await reviews.handle(req,res,url,u))return;
+ if(p==='/api/profile'&&m==='PATCH'){const user=requireUser(req),b=await payload(req),name=clean(b.name,80);if(!name)fail(400,'Please enter your name.');db.prepare('UPDATE users SET name=? WHERE id=?').run(name,user.id);return json(res,200,{user:userSafe(db.prepare('SELECT * FROM users WHERE id=?').get(user.id))});}
+ if(p==='/api/account'&&m==='DELETE'){const user=requireUser(req),b=await payload(req);if(user.role==='admin')fail(400,'The administrator account cannot be deleted.');if(typeof b.password!=='string'||b.password.length>128||!passwordOK(b.password,user.password))fail(400,'Password is incorrect.');db.prepare('DELETE FROM users WHERE id=?').run(user.id);res.setHeader('Set-Cookie','session=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0');return json(res,200,{ok:true});}
  if(p==='/api/account'&&m==='PATCH'){const user=requireUser(req),b=await payload(req);if(typeof b.currentPassword!=='string'||b.currentPassword.length>128||!passwordOK(b.currentPassword,user.password))fail(400,'Current password is incorrect.');if(typeof b.password!=='string'||b.password.length<10||b.password.length>128)fail(400,'Use a password of 10–128 characters.');db.prepare('UPDATE users SET password=? WHERE id=?').run(passwordHash(b.password),user.id);db.prepare('DELETE FROM sessions WHERE user_id=?').run(user.id);session(res,user.id);return json(res,200,{ok:true});}
 
  if(p==='/api/courses' && m==='GET') {
@@ -226,7 +232,7 @@ async function api(req,res,url){const p=url.pathname,m=req.method,u=identity(req
   else db.prepare('INSERT INTO courses VALUES(?,?,?,?,?,?,?,?,?,?,?,?)').run(id,...fields,now());
   return json(res,200,{id});
  }
- if(cm&&m==='DELETE'){admin(req);db.prepare('DELETE FROM courses WHERE id=?').run(cm[1]);return json(res,200,{ok:true});}
+ if(cm&&m==='DELETE'){admin(req);reviews.removeFor('course',cm[1]);db.prepare('DELETE FROM courses WHERE id=?').run(cm[1]);return json(res,200,{ok:true});}
 
  if(p==='/api/payment-settings'&&m==='GET')return json(res,200,paymentSettings());
  if(p==='/api/admin/payment-settings'&&m==='PUT'){
@@ -309,10 +315,10 @@ async function api(req,res,url){const p=url.pathname,m=req.method,u=identity(req
  }
  if(nm&&m==='DELETE'){admin(req);db.prepare('DELETE FROM notices WHERE id=?').run(nm[1]);return json(res,200,{ok:true});}
 
- if(p==='/api/reels'&&m==='GET'){const all=url.searchParams.has('all');if(all)admin(req);return json(res,200,db.prepare(`SELECT r.*,(SELECT COUNT(*) FROM likes WHERE reel_id=r.id) likes FROM reels r ${all?'':'WHERE published=1'} ORDER BY created DESC`).all().map(r=>({...r,liked:!!(u&&db.prepare('SELECT 1 FROM likes WHERE user_id=? AND reel_id=?').get(u.id,r.id))})));}
+ if(p==='/api/reels'&&m==='GET'){const all=url.searchParams.has('all');if(all)admin(req);return json(res,200,db.prepare(`SELECT r.*,(SELECT COUNT(*) FROM likes WHERE reel_id=r.id) likes FROM reels r ${all?'':'WHERE published=1'} ORDER BY created DESC`).all().map(r=>({...r,rating:reviews.ratingOf('reel',r.id),liked:!!(u&&db.prepare('SELECT 1 FROM likes WHERE user_id=? AND reel_id=?').get(u.id,r.id))})));}
  const rm=p.match(/^\/api\/reels\/([^/]+)$/);
- if((p==='/api/reels'&&m==='POST')||(rm&&m==='PUT')){admin(req);const b=await payload(req),title=clean(b.title);if(!title)fail(400,'A title is required.');const args=[title,clean(b.category,60)||'Programming',media(b.video),clean(b.caption,4000),colors.includes(b.color)?b.color:'purple',b.published?1:0];const id=rm?rm[1]:randomUUID();if(rm)db.prepare('UPDATE reels SET title=?,category=?,video=?,caption=?,color=?,published=? WHERE id=?').run(...args,id);else db.prepare('INSERT INTO reels VALUES(?,?,?,?,?,?,?,?)').run(id,...args,now());return json(res,200,{id});}
- if(rm&&m==='DELETE'){admin(req);db.prepare('DELETE FROM reels WHERE id=?').run(rm[1]);return json(res,200,{ok:true});}
+ if((p==='/api/reels'&&m==='POST')||(rm&&m==='PUT')){admin(req);const b=await payload(req),title=clean(b.title);if(!title)fail(400,'A title is required.');const args=[title,clean(b.category,60)||'Medical education',media(b.video),clean(b.caption,4000),colors.includes(b.color)?b.color:'purple',b.published?1:0];const id=rm?rm[1]:randomUUID();if(rm)db.prepare('UPDATE reels SET title=?,category=?,video=?,caption=?,color=?,published=? WHERE id=?').run(...args,id);else db.prepare('INSERT INTO reels VALUES(?,?,?,?,?,?,?,?)').run(id,...args,now());return json(res,200,{id});}
+ if(rm&&m==='DELETE'){admin(req);reviews.removeFor('reel',rm[1]);db.prepare('DELETE FROM reels WHERE id=?').run(rm[1]);return json(res,200,{ok:true});}
  const likeMatch=p.match(/^\/api\/reels\/([^/]+)\/like$/);if(likeMatch&&m==='POST'){const user=requireUser(req);if(!db.prepare('SELECT id FROM reels WHERE id=? AND published=1').get(likeMatch[1]))fail(404,'Reel not found.');const b=await payload(req);if(b.liked)db.prepare('INSERT OR IGNORE INTO likes VALUES(?,?)').run(user.id,likeMatch[1]);else db.prepare('DELETE FROM likes WHERE user_id=? AND reel_id=?').run(user.id,likeMatch[1]);return json(res,200,{ok:true});}
  if(p==='/api/admin/users'&&m==='GET'){admin(req);return json(res,200,db.prepare("SELECT id,name,email,role,status,created,(SELECT COUNT(*) FROM orders WHERE user_id=users.id AND status='approved') enrollments FROM users ORDER BY created DESC").all());}
  const um=p.match(/^\/api\/admin\/users\/([^/]+)$/);if(um&&(m==='PATCH'||m==='DELETE')){admin(req);const target=db.prepare('SELECT * FROM users WHERE id=?').get(um[1]);if(!target)fail(404,'User not found.');if(target.role==='admin')fail(400,'The administrator account cannot be suspended or deleted.');if(m==='DELETE')db.prepare('DELETE FROM users WHERE id=?').run(target.id);else{const b=await payload(req);if(!['active','suspended'].includes(b.status))fail(400,'Invalid status.');db.prepare('UPDATE users SET status=? WHERE id=?').run(b.status,target.id);db.prepare('DELETE FROM sessions WHERE user_id=?').run(target.id);}return json(res,200,{ok:true});}
@@ -346,8 +352,8 @@ async function api(req,res,url){const p=url.pathname,m=req.method,u=identity(req
 }
 
 const mime={'.html':'text/html; charset=utf-8','.js':'text/javascript; charset=utf-8','.css':'text/css; charset=utf-8','.svg':'image/svg+xml','.mp4':'video/mp4','.webm':'video/webm','.png':'image/png','.jpg':'image/jpeg','.webp':'image/webp'};
-function serve(req,res,url){let file,privateFile=false;if(url.pathname.startsWith('/uploads/')){if(!/^\/uploads\/[a-f0-9-]+\.(mp4|webm|png|jpg|webp)$/.test(url.pathname))fail(404,'File not found.');const record=db.prepare('SELECT * FROM uploads WHERE name=?').get(path.basename(url.pathname));if(!record)fail(404,'File not found.');if(record.kind==='proof'){privateFile=true;const viewer=requireUser(req);if(viewer.id!==record.owner_id&&viewer.role!=='admin')fail(403,'This payment proof is private.');}file=path.join(UPLOADS,path.basename(url.pathname));}else{const allowed={'/':'index.html','/index.html':'index.html','/app.js':'app.js','/styles.css':'styles.css','/favicon.svg':'favicon.svg'};if(!allowed[url.pathname])fail(404,'Page not found.');file=path.join(ROOT,'public',allowed[url.pathname]);}if(!existsSync(file))fail(404,'File not found.');const size=statSync(file).size,headers={'Content-Type':mime[path.extname(file)]||'application/octet-stream','Accept-Ranges':'bytes','Cache-Control':privateFile?'private, no-store':'no-cache'};let start=0,end=size-1,status=200;if(req.headers.range){const match=req.headers.range.match(/^bytes=(\d+)-(\d*)$/);if(!match){res.writeHead(416,{'Content-Range':`bytes */${size}`});return res.end();}start=Number(match[1]);end=match[2]?Number(match[2]):end;if(start>end||start>=size||end>=size){res.writeHead(416,{'Content-Range':`bytes */${size}`});return res.end();}status=206;headers['Content-Range']=`bytes ${start}-${end}/${size}`;}headers['Content-Length']=Math.max(0,end-start+1);res.writeHead(status,headers);if(req.method==='HEAD'||!size)return res.end();createReadStream(file,{start,end}).pipe(res);}
+function serve(req,res,url){let file,privateFile=false;if(url.pathname.startsWith('/uploads/')){if(!/^\/uploads\/[a-f0-9-]+\.(mp4|webm|png|jpg|webp)$/.test(url.pathname))fail(404,'File not found.');const record=db.prepare('SELECT * FROM uploads WHERE name=?').get(path.basename(url.pathname));if(!record)fail(404,'File not found.');if(record.kind==='proof'){privateFile=true;const viewer=requireUser(req);if(viewer.id!==record.owner_id&&viewer.role!=='admin')fail(403,'This payment proof is private.');}file=path.join(UPLOADS,path.basename(url.pathname));}else{const name=url.pathname==='/'||url.pathname==='/index.html'?'index.html':(url.pathname.match(/^\/([a-z0-9-]+\.(?:js|css|svg))$/)||[])[1];if(!name)fail(404,'Page not found.');file=path.join(ROOT,'public',name);}if(!existsSync(file))fail(404,'File not found.');const size=statSync(file).size,headers={'Content-Type':mime[path.extname(file)]||'application/octet-stream','Accept-Ranges':'bytes','Cache-Control':privateFile?'private, no-store':'no-cache'};let start=0,end=size-1,status=200;if(req.headers.range){const match=req.headers.range.match(/^bytes=(\d+)-(\d*)$/);if(!match){res.writeHead(416,{'Content-Range':`bytes */${size}`});return res.end();}start=Number(match[1]);end=match[2]?Number(match[2]):end;if(start>end||start>=size||end>=size){res.writeHead(416,{'Content-Range':`bytes */${size}`});return res.end();}status=206;headers['Content-Range']=`bytes ${start}-${end}/${size}`;}headers['Content-Length']=Math.max(0,end-start+1);res.writeHead(status,headers);if(req.method==='HEAD'||!size)return res.end();createReadStream(file,{start,end}).pipe(res);}
 export const server=http.createServer(async(req,res)=>{res.setHeader('X-Content-Type-Options','nosniff');res.setHeader('Referrer-Policy','strict-origin-when-cross-origin');res.setHeader('X-Frame-Options','DENY');res.setHeader('Content-Security-Policy',"default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' https: data:; media-src 'self' https:; frame-src https://www.youtube-nocookie.com; connect-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'");try{const url=new URL(req.url,'http://localhost');if(!['GET','HEAD'].includes(req.method)){const origin=req.headers.origin;const expected=process.env.APP_ORIGIN||`http://${req.headers.host}`;if(req.headers['sec-fetch-site']==='cross-site'||(origin&&origin!==expected))fail(403,'Cross-origin request blocked.');if(url.pathname!=='/api/upload'&&!(req.headers['content-type']||'').startsWith('application/json'))fail(415,'Content-Type must be application/json.');}if(url.pathname.startsWith('/api/'))await api(req,res,url);else if(['GET','HEAD'].includes(req.method))serve(req,res,url);else fail(405,'Method not allowed.');}catch(e){if(!res.headersSent)json(res,e.status||500,{error:e.status?e.message:'Something went wrong. Please try again.'});else res.end();if(!e.status)console.error(e);}});
-server.listen(Number(process.env.PORT||3000),process.env.HOST||'127.0.0.1',()=>console.log(`MedCircle Academy running at http://${process.env.HOST||'localhost'}:${process.env.PORT||3000}`));
+server.listen(Number(process.env.PORT||3000),process.env.HOST||'127.0.0.1',()=>console.log(`Cath Lab Insights running at http://${process.env.HOST||'localhost'}:${process.env.PORT||3000}`));
 
 export default (req, res) => server.emit('request', req, res);

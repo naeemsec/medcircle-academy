@@ -1,4 +1,4 @@
-# MedCircle Academy
+# Cath Lab Insights
 
 A responsive medical education community with paid courses, live Zoom lecture schedules, academy notices and short reels. This is the medical-focused replacement for the previous coding academy. All lectures happen on Zoom; the website handles discovery, schedules, student accounts, course payments and access to meeting links.
 
@@ -22,7 +22,7 @@ For source editing with automatic server restarts, use `npm run dev`. Refresh th
 
 | Field | Value |
 | --- | --- |
-| Email | `admin@medcircle.dev` |
+| Email | `admin@cathlab.dev` |
 | Password | `Admin@12345` |
 
 The login screen has a **Fill details** button in demo mode. Create a student account in an incognito window to test the student experience while staying signed in as admin.
@@ -123,24 +123,37 @@ The initial three courses, fees, schedules, notices and reel cards are **sample 
 ## Files
 
 ```text
-medcircle-academy/
+cath-lab-insights/
   public/
-    index.html       Browser shell and metadata
-    styles.css       Responsive styling, colors and animations
-    app.js           Pages, forms, routing and API calls
-    favicon.svg      Medical-themed academy icon
-  tests/
-    app.test.js      HTTP workflow and access-control tests
-    views.test.js    Public/student/admin view-rendering checks
-  server.js          Node server, SQLite schema and API
-  vercel.json
-  package.json       Start, development and test commands
-  .env.example       Optional configuration
-  .gitignore         Excludes data and local secrets
-  README.md          Setup and usage guide
-  API.md             Endpoints, database and access rules
-  CHANGELOG.md       Changes from the original coding version
+    index.html          Browser shell and metadata
+    styles.css          Original base styling
+    sizes.css           ALL box sizes (cards, lectures, reels, notices) - edit numbers here
+    components.css      Reviews, stars, account area, home sections, footer
+    app.js              Routing, public pages, admin dashboard, forms
+    utils.js            Shared helpers (api, icons, money, dates, toast, dialogs)
+    reviews.js          Ratings and reviews UI
+    account.js          My account area (overview, courses, payments, reviews, profile, security)
+    home-sections.js    Extra home sections and footer
+    favicon.svg
+  scripts/reset-admin.js   Resets the admin login (npm run reset-admin)
+  server.js             Node server, SQLite schema and API
+  reviews.js            Reviews API and rating helpers
+  vercel.json, package.json, README.md
 ```
+
+## Changing box sizes
+
+Open `public/sizes.css` and edit the numbers in the `:root` block at the top (card width and cover height, lecture box padding, reel height/width, notice padding). Save and refresh the browser.
+
+## Reviews
+
+Signed-in students can rate 1-5 stars and write a message on any course or reel, once each (they can edit or delete it). Courses with no reviews show a NEW tag; otherwise the average rating is shown on the card. Administrators can delete any review but cannot post one.
+
+## Admin login problems
+
+Stop the server and run `npm run reset-admin`. It sets the admin to `admin@cathlab.dev` / `Admin@12345` (or `ADMIN_EMAIL` / `ADMIN_PASSWORD` from `.env`) in the existing database, then start the server again.
+
+On Vercel, SQLite data is NOT permanent and sessions break between serverless instances. Use a persistent Node host (Render, Railway, a VPS) for real use.
 
 ## Storage and the previous coding version
 
@@ -172,7 +185,7 @@ cp .env.example .env
 | `HOST` | `127.0.0.1` | Default access is only your computer |
 | `DATA_DIR` | `./data` relative to server.js | Optional absolute path for persistent data |
 | `DEMO_MODE` | `true` | Initial sample content and demo-login hints |
-| `ADMIN_EMAIL` | `admin@medcircle.dev` | Initial admin email for a new database |
+| `ADMIN_EMAIL` | `admin@cathlab.dev` | Initial admin email for a new database |
 | `ADMIN_PASSWORD` | `Admin@12345` in demo mode | Initial admin password for a new database |
 | `APP_ORIGIN` | Incoming HTTP origin | Set the exact HTTPS origin when hosting |
 | `COOKIE_SECURE` | `false` | Set `true` on HTTPS hosting |

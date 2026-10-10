@@ -1,0 +1,103 @@
+/* =====================================================================
+   SIZES.CSS  -  one place to make boxes bigger or smaller
+   ---------------------------------------------------------------------
+   Change only the numbers in the :root block below, save, refresh.
+   (Loaded after styles.css, so these values win.)
+   ===================================================================== */
+:root{
+ /* ---- COURSE CARDS (Courses page, Home, My courses) ---- */
+ --card-min-w:240px;        /* minimum card WIDTH. Bigger = fewer, wider cards per row */
+ --card-gap:18px;           /* space between cards */
+ --card-cover-h:112px;      /* cover image/colour HEIGHT */
+ --card-body-pad:16px;      /* padding inside the card */
+ --card-title-size:16px;    /* course title font size */
+ --card-desc-lines:2;       /* how many description lines to show */
+ --card-icon-size:40px;     /* big letters (AN, PH...) on the cover */
+
+ /* ---- COURSE DETAIL PAGE ---- */
+ --detail-cover-h:190px;    /* cover HEIGHT on the details page */
+ --detail-title-size:30px;  /* course title size */
+
+ /* ---- LIVE LECTURE (SCHEDULE) BOXES ---- */
+ --lecture-pad:12px 16px;   /* padding: top/bottom  left/right */
+ --lecture-gap:14px;        /* gap between date tile, text and button */
+ --lecture-title-size:15px; /* lecture title size */
+ --lecture-stack-gap:10px;  /* gap between lecture boxes */
+ --date-tile-w:50px;        /* date tile WIDTH */
+ --date-tile-h:54px;        /* date tile HEIGHT */
+ --lecture-desc-lines:2;    /* description lines */
+
+ /* ---- REELS ---- */
+ --reel-home-min-h:170px;   /* reel box HEIGHT on the Home page */
+ --reel-home-title:20px;    /* reel title size on Home */
+ --feed-card-min-w:210px;   /* reels page: card WIDTH. Bigger = wider cards */
+ --feed-card-max-w:260px;   /* reels page: card never wider than this */
+ --feed-media-ratio:9/12;   /* reels page: HEIGHT shape (width/height). 9/16 = tall, 9/10 = short */
+ --feed-title-size:22px;    /* title on text-only reels */
+
+ /* ---- NOTICES ---- */
+ --notice-pad:14px 18px;    /* padding inside a notice */
+ --notice-gap:14px;         /* gap between icon and text */
+ --notice-title-size:16px;  /* notice title size */
+ --notice-text-size:12.5px; /* notice message size */
+ --notice-list-max-w:820px; /* how wide the notices column is */
+ --notice-icon:32px;        /* round icon box size */
+}
+
+/* ---------- Course cards ---------- */
+.grid{grid-template-columns:repeat(auto-fill,minmax(var(--card-min-w),1fr));gap:var(--card-gap)}
+.cover{height:var(--card-cover-h);padding:14px}
+.cover .codeicon{font-size:var(--card-icon-size);letter-spacing:-2px}
+.cover:before,.cover:after{opacity:.6}
+.card-body{padding:var(--card-body-pad)}
+.card-body h3{font-size:var(--card-title-size);margin-bottom:6px}
+.card-body p{font-size:12px;margin-bottom:12px;line-height:1.55;display:-webkit-box;-webkit-line-clamp:var(--card-desc-lines);-webkit-box-orient:vertical;overflow:hidden}
+.card-kicker{margin-bottom:6px}
+.course-price{font-size:17px;margin-bottom:12px}
+.card-foot{padding-top:12px}
+
+/* ---------- Course details ---------- */
+.detail-hero{gap:32px;padding:0 0 26px}
+.detail-hero h1{font-size:var(--detail-title-size);margin:12px 0}
+.detail-hero .cover{height:var(--detail-cover-h);border-radius:16px}
+.detail-hero .codeicon{font-size:56px}
+
+/* ---------- Live lectures ---------- */
+.lecture-stack{gap:var(--lecture-stack-gap)}
+.lecture-card,.lecture-card.compact{padding:var(--lecture-pad);gap:var(--lecture-gap);border-radius:12px}
+.lecture-content h3,.lecture-card.compact h3{font-size:var(--lecture-title-size);margin-bottom:5px}
+.lecture-meta{margin-bottom:6px}
+.lecture-content>p{margin:5px 0;display:-webkit-box;-webkit-line-clamp:var(--lecture-desc-lines);-webkit-box-orient:vertical;overflow:hidden}
+.date-tile{width:var(--date-tile-w);min-width:var(--date-tile-w);height:var(--date-tile-h);border-radius:10px}
+.date-tile b{font-size:21px;line-height:1.2}
+.date-tile span{font-size:9px}
+
+/* ---------- Reels (home) ---------- */
+.reel-grid{gap:16px}
+.reel-card{min-height:var(--reel-home-min-h);padding:18px;border-radius:14px}
+.reel-card h3{font-size:var(--reel-home-title);margin:auto 0 14px}
+
+/* ---------- Reels page ---------- */
+.reels-feed{grid-template-columns:repeat(auto-fill,minmax(var(--feed-card-min-w),var(--feed-card-max-w)));gap:18px;max-width:none;margin:0;padding-bottom:50px;justify-content:start}
+.feed-card{border-radius:14px}
+.feed-display{aspect-ratio:var(--feed-media-ratio);padding:18px}
+.feed-card video,.feed-card iframe{aspect-ratio:var(--feed-media-ratio)}
+.reels-feed .feed-display h2{font-size:var(--feed-title-size)}
+.feed-display pre{font-size:11px;line-height:1.7}
+.feed-info{padding:14px 16px}
+.feed-info h3{font-size:15px;margin-bottom:8px}
+
+/* ---------- Notices ---------- */
+.notice-list{max-width:var(--notice-list-max-w)}
+.notice-card{padding:var(--notice-pad);gap:var(--notice-gap);margin-bottom:10px;border-radius:12px}
+.notice-symbol{width:var(--notice-icon);min-width:var(--notice-icon);height:var(--notice-icon);border-radius:10px}
+.notice-meta{margin-bottom:6px}
+.notice-card h3{font-size:var(--notice-title-size);margin-bottom:5px}
+.notice-card p{font-size:var(--notice-text-size);line-height:1.6}
+
+/* ---------- Phones: a bit tighter again ---------- */
+@media(max-width:600px){
+ :root{--card-min-w:100%;--card-cover-h:100px;--detail-cover-h:150px;--detail-title-size:26px;--lecture-pad:11px 12px;--lecture-gap:10px;--date-tile-w:44px;--date-tile-h:50px;--feed-card-min-w:150px;--feed-card-max-w:100%;--notice-pad:12px 14px}
+ .reels-feed{grid-template-columns:repeat(2,minmax(0,1fr))}
+ .lecture-action{margin-left:0}
+}
